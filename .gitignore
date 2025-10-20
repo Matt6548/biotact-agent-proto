@@ -1,1 +1,18 @@
-backend/secrets/
+﻿# venv / кеш / артефакты
+.venv/
+.venv*/
+__pycache__/
+*.pyc
+*.pyo
+.streamlit/secrets.toml
+.data/
+*.bak
+*.bak.*
+*.log
+_diag_*.txt
+# случайные файлы, попавшие из консоли
+
+button
+button{
+1.39
+str
