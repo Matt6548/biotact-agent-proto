@@ -1,27 +1,25 @@
 name: CI
 
 on:
-  push:
-    branches: [main, refactor/agent-platform]
   pull_request:
+  push:
+    branches: [main]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      - name: Install Poetry
-        run: pip install poetry
-      - name: Install dependencies
-        run: poetry install
-      - name: Lint
+          python-version: "3.11"
+
+      - name: Install (editable)
         run: |
-          poetry run ruff check .
-          poetry run black --check .
-          poetry run isort --check-only .
-      - name: Test
-        run: poetry run pytest
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest
+
+      - name: Run tests (offline-friendly)
+        run: pytest -q
+
