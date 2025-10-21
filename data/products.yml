@@ -1,0 +1,32 @@
+# Product catalogue used in demo pipelines.
+products:
+  vitality-complex:
+    name: Vitality Complex
+    tagline: Daily micronutrient support for busy professionals.
+    benefits:
+      - Sustained energy release from slow-carb compounds
+      - Adaptogenic blend for stress resilience
+      - Essential vitamins for immune balance
+    target_audience:
+      - Remote-first teams balancing work and wellness
+      - Individuals preparing for intensive projects
+  clarity-drops:
+    name: Clarity Drops
+    tagline: Fast focus booster designed for creative sprints.
+    benefits:
+      - Nootropic complex enhances concentration within minutes
+      - Gentle herbal profile suitable for late-evening work
+      - Zero-sugar formula with natural citrus profile
+    target_audience:
+      - Designers and writers facing deadline crunches
+      - Workshop facilitators running hybrid sessions
+  recovery-shield:
+    name: Recovery Shield
+    tagline: Nightly restoration protocol for consistent performers.
+    benefits:
+      - Amino acid triad supporting overnight muscle repair
+      - Magnesium and vitamin B blend for nervous system balance
+      - Botanical extracts promoting deep, calm sleep
+    target_audience:
+      - Product teams managing launches
+      - Fitness communities balancing workload and training

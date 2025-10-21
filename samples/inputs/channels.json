@@ -1,0 +1,5 @@
+{
+  "channels": ["blog", "email", "instagram", "podcast"],
+  "cadence_days": 2,
+  "tone_of_voice": "optimistic"
+}
