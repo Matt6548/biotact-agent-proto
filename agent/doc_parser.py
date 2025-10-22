@@ -27,25 +27,44 @@ def mask_pii(value: str) -> str:
 
 
 def chunk_text(text: str, max_chars: int = 800) -> List[str]:
-    """Split text into manageable chunks for retrieval."""
-
+    """
+    Greedy chunking by words: накапливаем слова, пока длина чанка
+    НЕ ДОСТИГНЕТ или НЕ ПРЕВЫСИТ max_chars; после этого закрываем чанк.
+    Пример: chunk_text("one two three four", 7) -> ["one two", "three four"]
+    """
     if not text:
         return []
+
     words = text.split()
     chunks: List[str] = []
-    current: List[str] = []
-    current_len = 0
-    for word in words:
-        if current_len + len(word) + 1 > max_chars and current:
-            chunks.append(" ".join(current))
-            current = []
-            current_len = 0
-        current.append(word)
-        current_len += len(word) + 1
-    if current:
-        chunks.append(" ".join(current))
-    return chunks
+    cur: List[str] = []
+    cur_len = 0  # длина ' '.join(cur)
 
+    for w in words:
+        if not cur:
+            # начинаем новый чанк
+            cur.append(w)
+            cur_len = len(w)
+            # если одно слово уже >= лимита — закрываем сразу
+            if cur_len >= max_chars:
+                chunks.append(" ".join(cur))
+                cur, cur_len = [], 0
+            continue
+
+        proposed_len = cur_len + 1 + len(w)  # +1 за пробел
+        if proposed_len < max_chars:
+            # ниже лимита — продолжаем накапливать
+            cur.append(w)
+            cur_len = proposed_len
+        else:
+            # достигли/превысили лимит — добавляем слово и закрываем чанк
+            cur.append(w)
+            chunks.append(" ".join(cur))
+            cur, cur_len = [], 0
+
+    if cur:
+        chunks.append(" ".join(cur))
+    return chunks
 
 def _read_text_file(path: Path) -> str:
     return path.read_text(encoding="utf-8")
