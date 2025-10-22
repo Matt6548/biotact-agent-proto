@@ -1,18 +1,12 @@
-﻿# venv / кеш / артефакты
-.venv/
-.venv*/
 __pycache__/
 *.pyc
 *.pyo
-.streamlit/secrets.toml
-.data/
-*.bak
-*.bak.*
-*.log
-_diag_*.txt
-# случайные файлы, попавшие из консоли
-
-button
-button{
-1.39
-str
+*.pyd
+.env
+.venv/
+.poetry/
+poetry.lock
+.DS_Store
+logs/
+/outputs/
+*.docx.txt

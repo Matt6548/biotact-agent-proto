@@ -1,0 +1,18 @@
+[
+  {
+    "date": "2025-01-01",
+    "channel": "blog",
+    "title": "Focus Sprint – Vitality Complex",
+    "summary": "Daily micronutrient plan aligned with remote team rituals.",
+    "body": "[offline-response]\nThis environment is running in offline mode. The following prompt was received:\nTask: Create long-form article...",
+    "sources": ["catalog:Vitality Complex", "event:Project Aurora Labs"]
+  },
+  {
+    "date": "2025-01-03",
+    "channel": "email",
+    "title": "Deep Work Reset – Clarity Drops",
+    "summary": "Email narrative focused on calm alertness for cross-functional squads.",
+    "body": "[offline-response]\nThis environment is running in offline mode. The following prompt was received:\nTask: Create long-form article...",
+    "sources": ["catalog:Clarity Drops"]
+  }
+]

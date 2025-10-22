@@ -1,0 +1,13 @@
+name: sample-summary
+version: 0.1.0
+inputs:
+  text:
+    type: string
+    description: Text block to summarise.
+outputs:
+  summary:
+    type: string
+    description: Offline summary returned by the built-in LLM fallback.
+  provider:
+    type: string
+    description: Name of the LLM provider that generated the summary.
