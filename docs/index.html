@@ -1,0 +1,95 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Local Safety Demo — Camera & Screen Watch</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">🛡️</div>
+      <div class="titles">
+        <h1>Local Safety Demo</h1>
+        <p>Всё обрабатывается локально в вашем браузере. Ничего не отправляется в сеть.</p>
+      </div>
+    </div>
+    <div class="status">
+      <span id="statusDot" class="dot dot-idle"></span>
+      <span id="statusText">Ожидание</span>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="panel">
+      <h2>Источники</h2>
+      <div class="controls">
+        <button id="btnCamStart">Включить камеру</button>
+        <button id="btnCamStop" disabled>Выключить камеру</button>
+        <button id="btnScrStart">Захват экрана</button>
+        <button id="btnScrStop" disabled>Остановить экран</button>
+      </div>
+
+      <div class="videos">
+        <div class="videoCard">
+          <div class="videoHeader">Камера</div>
+          <video id="camVideo" autoplay playsinline muted></video>
+          <div class="meta"><span id="camRes">—</span> · <span id="camFps">—</span></div>
+        </div>
+        <div class="videoCard">
+          <div class="videoHeader">Экран</div>
+          <video id="scrVideo" autoplay playsinline muted></video>
+          <div class="meta"><span id="scrRes">—</span> · <span id="scrFps">—</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Параметры анализа</h2>
+      <div class="settings">
+        <label><input type="checkbox" id="chkBlack" checked /> Детект «чёрного кадра»</label>
+        <label><input type="checkbox" id="chkFreeze" checked /> Детект «замёрзшего кадра»</label>
+        <label><input type="checkbox" id="chkResChange" checked /> Изменение разрешения</label>
+        <label><input type="checkbox" id="chkFpsDrop" checked /> Резкое падение FPS</label>
+        <label><input type="checkbox" id="chkIdle" checked /> Таймаут простоя</label>
+
+        <div class="inline">
+          <label>Порог яркости (чёрный): <input type="number" id="thBlack" value="10" min="1" max="50" />%</label>
+          <label>Порог FPS: <input type="number" id="thFps" value="8" min="1" max="60" /></label>
+          <label>Таймаут, сек: <input type="number" id="idleSec" value="6" min="2" max="60" /></label>
+        </div>
+      </div>
+
+      <div class="actionsRow">
+        <button id="btnClearLog" class="ghost">Очистить лог</button>
+        <button id="btnDownloadLog">Скачать лог (.json)</button>
+      </div>
+
+      <div class="actionsRow">
+        <button id="btnSnapCam">📸 Снимок камеры (PNG)</button>
+        <button id="btnSnapScr">📸 Снимок экрана (PNG)</button>
+      </div>
+
+      <!-- Мини-графики FPS -->
+      <div class="actionsRow">
+        <div style="display:flex;gap:10px;align-items:center">
+          <strong>FPS (камера)</strong>
+          <canvas id="fpsCam" width="240" height="40" style="background:#0a0d11;border:1px solid #222a33;border-radius:8px"></canvas>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <strong>FPS (экран)</strong>
+          <canvas id="fpsScr" width="240" height="40" style="background:#0a0d11;border:1px solid #222a33;border-radius:8px"></canvas>
+        <div class="actionsRow"><label><input type="checkbox" id="chkAutoRestart" checked /> Автоперезапуск источников при обрыве</label></div><div class="log" id="logBox" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p>Демо для портфолио. Локальная обработка. Автор: вы 🙂</p>
+  </footer>
+
+  <canvas id="workCanvas" width="320" height="180" class="hidden"></canvas>
+  <script src="app.js"></script>
+</body>
+</html>
+
