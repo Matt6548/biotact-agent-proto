@@ -1,12 +1,19 @@
+﻿# venv / IDE / python
+.venv/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.env
-.venv/
-.poetry/
-poetry.lock
+*.log
+
+# app data
+logs.db
+data/
+*.bak
+
+# OS / editor
 .DS_Store
-logs/
-/outputs/
-*.docx.txt
+Thumbs.db
+.vscode/
+
+.env

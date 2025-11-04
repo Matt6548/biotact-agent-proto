@@ -1,0 +1,19 @@
+{
+  "blocked_services": [
+    "telegram",
+    "youtube"
+  ],
+  "scope_domains": [
+    "developers.facebook.com",
+    "web.telegram.org",
+    "youtube.com"
+  ],
+  "allowed_domains": [],
+  "time_windows": [
+    {
+      "start": "22:00",
+      "end": "08:00"
+    }
+  ],
+  "log_external": false
+}

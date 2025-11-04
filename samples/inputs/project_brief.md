@@ -1,6 +1,5 @@
-# Project Aurora Launch Brief
-
-- Audience: remote-first teams in Europe and North America
-- Primary goals: maintain focus, reduce burnout, track recovery markers
-- Tone: uplifting, data-informed, respectful of time-boxed sprints
-- Content cadence: three pieces per week mixing blog, email, and social micro-stories
+﻿# Project Brief
+Title: Vitality Complex
+Goal: Grow leads for auto import service in Tashkent.
+Audience: 25–45, mid-income, wants reliable import.
+Tone: Friendly, expert, concise.

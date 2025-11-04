@@ -187,3 +187,37 @@ def convert_docx_directory(directory: Path) -> List[Path]:
         output.write_text(text, encoding="utf-8")
         created.append(output)
     return created
+# biotact_agent/doc_parser.py (фрагмент)
+# biotact_agent/doc_parser.py
+import json
+from pathlib import Path
+
+def load_channels(path: str | Path):
+    p = Path(path)
+    if not p.exists():
+        return []
+    raw = p.read_text(encoding="utf-8-sig", errors="ignore").lstrip("\ufeff")
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return []
+    # 1) ["blog","instagram","telegram"]
+    if isinstance(data, list) and all(isinstance(x, str) for x in data):
+        return data
+    # 2) [{"channel":"blog"}, {"name":"instagram"}]
+    if isinstance(data, list) and all(isinstance(x, dict) for x in data):
+        vals = []
+        for x in data:
+            if "channel" in x: vals.append(x["channel"])
+            elif "name" in x:  vals.append(x["name"])
+        return [v for v in vals if v]
+    # 3) {"channels":[...]}
+    if isinstance(data, dict) and "channels" in data:
+        ch = data["channels"]
+        if isinstance(ch, list):
+            out = []
+            for c in ch:
+                if isinstance(c, str): out.append(c)
+                elif isinstance(c, dict): out.append(c.get("channel") or c.get("name"))
+            return [v for v in out if v]
+    return []

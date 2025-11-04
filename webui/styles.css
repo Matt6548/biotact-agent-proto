@@ -1,0 +1,156 @@
+:root {
+  --bg: #0f1216;
+  --panel: #151a21;
+  --text: #e7ecf3;
+  --muted: #9aa7b5;
+  --accent: #70e1ff;
+  --danger: #ff6b6b;
+  --warn: #ffd166;
+  --ok: #2dd4bf;
+  --border: #222a33;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+  background: radial-gradient(1200px 800px at 80% -10%, #1b2330 0%, #0f1216 45%, #0f1216 100%);
+  color: var(--text);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+  position: sticky;
+  top: 0;
+  backdrop-filter: blur(6px);
+}
+
+.brand { display: flex; gap: 12px; align-items: center; }
+.logo { font-size: 26px; }
+.titles h1 { margin: 0 0 2px; font-size: 18px; font-weight: 700; }
+.titles p { margin: 0; color: var(--muted); font-size: 13px; }
+
+.status { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
+.dot-idle { background: var(--muted); }
+.dot-run { background: var(--ok); box-shadow: 0 0 12px var(--ok); }
+.dot-warn { background: var(--warn); box-shadow: 0 0 12px var(--warn); }
+.dot-error { background: var(--danger); box-shadow: 0 0 12px var(--danger); }
+
+.grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 16px;
+  padding: 16px;
+}
+@media (max-width: 980px) {
+  .grid { grid-template-columns: 1fr; }
+}
+
+.panel {
+  background: linear-gradient(180deg, rgba(255,255,255,0.015), transparent);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+}
+
+h2 { margin: 0 0 12px; font-size: 16px; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+button {
+  background: #1b2430;
+  color: var(--text);
+  border: 1px solid #2a3442;
+  padding: 10px 14px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform .04s ease, border-color .2s ease, background .2s ease;
+}
+button:hover { border-color: var(--accent); }
+button:active { transform: translateY(1px); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.ghost { background: transparent; }
+
+.videos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 980px) {
+  .videos { grid-template-columns: 1fr; }
+}
+
+.videoCard {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #0f131a;
+}
+.videoHeader {
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--muted);
+  background: #0b0f14;
+  border-bottom: 1px solid var(--border);
+}
+video {
+  width: 100%;
+  max-height: 320px;
+  background: #000;
+  display: block;
+}
+.meta {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+}
+
+.settings {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.inline { display: grid; gap: 8px; grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 680px) { .inline { grid-template-columns: 1fr; } }
+.settings label { color: var(--text); font-size: 14px; }
+.settings input[type="number"] { width: 80px; }
+
+.actionsRow { display: flex; gap: 10px; margin-bottom: 12px; }
+
+.log {
+  height: 320px;
+  overflow: auto;
+  background: #0a0d11;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 12.5px;
+}
+.log .row { padding: 6px 8px; border-bottom: 1px dashed #1e2732; }
+.log .row:last-child { border-bottom: 0; }
+.log .ts { color: var(--muted); margin-right: 8px; }
+.log .tag { padding: 1px 6px; border-radius: 999px; font-size: 11px; margin-right: 8px; border: 1px solid var(--border); }
+.tag-cam { color: #9bdcff; }
+.tag-scr { color: #ffd29b; }
+.sev-info { color: var(--text); }
+.sev-warn { color: var(--warn); }
+.sev-err  { color: var(--danger); }
+
+.foot {
+  padding: 16px;
+  text-align: center;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
+
+.hidden { display: none; }

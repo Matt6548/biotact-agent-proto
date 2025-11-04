@@ -1,22 +1,34 @@
-# Demo Content Plan
+# Content Plan
 
-## Focus Sprint – Vitality Complex (2025-01-01 • blog)
-Daily micronutrient plan aligned with remote team rituals.
+## Auto-assembled from local corpus
 
-[offline-response]
-This environment is running in offline mode. The following prompt was received:
-Task: Create long-form article...
+### Brief (source)
+```
+﻿# Project Brief
+Title: Vitality Complex
+Goal: Grow leads for auto import service in Tashkent.
+Audience: 25–45, mid-income, wants reliable import.
+Tone: Friendly, expert, concise.
+```
 
-Sources:
-- [1] catalog:Vitality Complex
-- [2] event:Project Aurora Labs
+### Channels
+- blog
+- instagram
+- telegram
 
-## Deep Work Reset – Clarity Drops (2025-01-03 • email)
-Email narrative focused on calm alertness for cross-functional squads.
+### Brand Story
+﻿Our brand story:
+- We import cars from Korea and China safely.
+- Transparent pricing, legal assistance, warranty.
+- NetCars style: practical, respectful, no hype.
 
-[offline-response]
-This environment is running in offline mode. The following prompt was received:
-Task: Create long-form article...
+### Knowledge Highlights
+- ﻿Knowledge base snippets:
+- - FAQ: timelines, logistics, customs payments.
+- - Differentiators: inspection reports, escrow, photo/video updates.
 
-Sources:
-- [1] catalog:Clarity Drops
+_Sources:_
+- project_brief.md
+- channels.json
+- brand_story.txt
+- knowledge_base.txt

@@ -1,0 +1,12 @@
+﻿services:
+  biotact:
+    build: .
+    ports:
+      - "18080:8080"
+    volumes:
+      - ./webui:/app/webui
+      - ./data:/app/data
+    environment:
+      - PORT=8080
+      - PRIVACY_STRICT=1
+      - LOG_RETENTION_DAYS=7

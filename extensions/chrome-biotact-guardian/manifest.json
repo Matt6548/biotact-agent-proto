@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Biotact Guardian",
+  "version": "0.1.1",
+  "description": "Tracks site usage and shows local focus overlay based on policy.",
+  "permissions": ["storage"],
+  "host_permissions": ["<all_urls>", "http://127.0.0.1/*"],
+  "background": { "service_worker": "service_worker.js" },
+  "options_page": "options.html",
+  "content_scripts": [{
+    "matches": ["<all_urls>"],
+    "js": ["content.js"],
+    "run_at": "document_start"
+  }]
+}

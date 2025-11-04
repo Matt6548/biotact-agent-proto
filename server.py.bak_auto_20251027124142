@@ -1,0 +1,373 @@
+from fastapi.responses import HTMLResponse
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+from typing import Dict, Any, List
+from fastapi.responses import JSONResponse, HTMLResponse, Response, RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+from apscheduler.schedulers.background import BackgroundScheduler
+import io, csv, time, os, re, hashlib, json
+from urllib.parse import urlparse
+
+# Р В Р вЂ Р В Р вЂ¦Р РЋРЎвЂњР РЋРІР‚С™Р РЋР вЂљР В Р’ВµР В Р вЂ¦Р В Р вЂ¦Р В РЎвЂР В Р’Вµ Р В РЎВР В РЎвЂўР В РўвЂР РЋРЎвЂњР В Р’В»Р В РЎвЂ (Р В РЎвЂќР В Р’В°Р В РЎвЂќ Р В РЎвЂ Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р РЋР Р‰Р РЋРІвЂљВ¬Р В Р’Вµ)
+from agent.policy import load_rules, save_rules, check_event
+from agent.runner import run_steps
+from agent.logs import add_event, list_events, stats
+
+load_dotenv()
+ADMIN_PIN    = os.getenv("ADMIN_PIN")
+PRIV_STRICT  = os.getenv("PRIVACY_STRICT", "1") == "1"
+HASH_DOMAINS = os.getenv("HASH_DOMAINS",  "0") == "1"
+HASH_SALT    = os.getenv("HASH_SALT", "biotact-local-salt")
+LOG_RET_DAYS = int(os.getenv("LOG_RETENTION_DAYS", "7"))
+
+DATA_DIR   = os.path.join(os.getcwd(), "data")
+EVENTS_JL  = os.path.join(DATA_DIR, "events.jsonl")
+
+app = FastAPI(title="Biotact Agent Server")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+scheduler = BackgroundScheduler(); scheduler.start()
+
+# Р РЋРІР‚С›Р В РЎвЂўР В РЎвЂќР РЋРЎвЂњР РЋР С“ Р В РЎвЂ Р В РЎвЂ”Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’В°
+focus_state = {"active": False, "end_ts": 0, "allow": []}
+panic_until = 0.0
+
+def _now(): return time.time()
+
+def _is_panic() -> bool:
+    global panic_until
+    if panic_until and _now() >= panic_until:
+        panic_until = 0.0
+    return panic_until > 0
+
+# --- Р РЋРЎвЂњР РЋРІР‚С™Р В РЎвЂР В Р’В»Р В РЎвЂР РЋРІР‚С™Р РЋРІР‚в„– Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р В Р вЂ¦Р В РЎвЂўР РЋР С“Р РЋРІР‚С™Р В РЎвЂ/Р В РЎвЂ”Р В Р’В°Р РЋР вЂљР РЋР С“Р В РЎвЂР В Р вЂ¦Р В РЎвЂ“Р В Р’В° ---
+def _norm_input_url(u: str) -> str:
+    if not u: return ""
+    if "://" not in u: return "https://" + u.strip("/")
+    return u
+
+def _domain(url: str) -> str:
+    try: return (urlparse(url).hostname or "").lower()
+    except: return ""
+
+def _hash(s: str) -> str:
+    return hashlib.sha256((HASH_SALT + "|" + (s or "")).encode("utf-8")).hexdigest()[:12]
+
+def sanitize_url_keep_domain(u: str) -> str:
+    host = _domain(_norm_input_url(u))
+    if not host: return ""
+    return _hash(host) if HASH_DOMAINS else host
+
+def sanitize_event_for_log(ev: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(ev or {})
+    out["target"] = sanitize_url_keep_domain(out.get("target",""))
+    for k in list(out.keys()):
+        if isinstance(out[k], str):
+            s = out[k]
+            s = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[email]", s)
+            s = re.sub(r"\?[^ ]*", "", s)
+            s = re.sub(r"/[\w\-]{6,}", "/Р Р†Р вЂљР’В¦", s)
+            out[k] = s
+    return out
+
+def _privacy_badge() -> str:
+    mode = "Strict ON" if PRIV_STRICT else "Strict OFF"
+    hashed = " Р вЂ™Р’В· Hashed domains" if HASH_DOMAINS else ""
+    panic = " Р вЂ™Р’В· PANIC ON" if _is_panic() else ""
+    return f"<span style='color:#666;font-size:12px'>(Privacy: {mode}{hashed}{panic})</span>"
+
+# --- Р В Р’В Р В Р’ВµР РЋРІР‚С™Р В Р’ВµР В Р вЂ¦Р РЋРІвЂљВ¬Р В Р вЂ¦ Р В Р’В»Р В РЎвЂўР В РЎвЂ“Р В РЎвЂўР В Р вЂ  ---
+def prune_logs(days: int):
+    cutoff = _now() - days*86400
+    if not os.path.exists(EVENTS_JL): return
+    kept = []
+    with open(EVENTS_JL, "r", encoding="utf-8") as f:
+        for line in f:
+            try:
+                j = json.loads(line)
+                if float(j.get("ts",0)) >= cutoff:
+                    kept.append(line)
+            except: pass
+    tmp = EVENTS_JL + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as w:
+        for line in kept: w.write(line)
+    os.replace(tmp, EVENTS_JL)
+
+scheduler.add_job(lambda: prune_logs(LOG_RET_DAYS), "interval", hours=6, id="retention", replace_existing=True)
+
+# --- PIN Р В Р’В·Р В Р’В°Р РЋРІР‚В°Р В РЎвЂР РЋРІР‚С™Р В Р’В° (Р В РЎвЂќР В Р’В°Р В РЎвЂќ Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р РЋР Р‰Р РЋРІвЂљВ¬Р В Р’Вµ) ---
+def _pin_guard(request: Request):
+    if not ADMIN_PIN: return None
+    if request.cookies.get("biotact_pin") == ADMIN_PIN: return None
+    page = f"""<!doctype html><meta charset='utf-8'><title>Biotact Р Р†Р вЂљРІР‚Сњ PIN</title>
+    <style>body{{font-family:system-ui;margin:40px}} input,button{{padding:10px}}</style>
+    <h3>Р В РІР‚в„ўР В Р вЂ Р В Р’ВµР В РўвЂР В РЎвЂР РЋРІР‚С™Р В Р’Вµ PIN</h3>
+    <form method="post" action="/auth/pin">
+      <input type="password" name="pin" required placeholder="PIN"><input type="hidden" name="next" value="{request.url.path}">
+      <button>Р В РІР‚в„ўР В РЎвЂўР В РІвЂћвЂ“Р РЋРІР‚С™Р В РЎвЂ</button></form>"""
+    return html_utf8(page)
+
+@app.post("/auth/pin")
+async def auth_pin(request: Request):
+    form = await request.form()
+    if ADMIN_PIN and form.get("pin","") == ADMIN_PIN:
+        r = RedirectResponse(url=form.get("next","/dashboard"), status_code=302)
+        r.set_cookie("biotact_pin", ADMIN_PIN, max_age=86400, httponly=True)
+        return r
+    return html_utf8("<meta charset=utf-8>Р В РЎСљР В Р’ВµР В Р вЂ Р В Р’ВµР РЋР вЂљР В Р вЂ¦Р РЋРІР‚в„–Р В РІвЂћвЂ“ PIN", status_code=403)
+
+@app.get("/health")
+def health(): return {"ok": True, "privacy_strict": PRIV_STRICT, "hash_domains": HASH_DOMAINS, "panic": _is_panic()}
+
+# --- RULES (Р В РўвЂР В РЎвЂўР В Р’В±Р В Р’В°Р В Р вЂ Р В Р’В»Р В Р’ВµР В Р вЂ¦ warn_only_domains) ---
+@app.get("/rules")
+def get_rules():
+    r = load_rules() or {}
+    r.setdefault("blocked_services", [])
+    r.setdefault("allowed_domains", [])
+    r.setdefault("scope_domains", [])
+    r.setdefault("log_external", False)
+    r.setdefault("warn_only_domains", [])
+    r.setdefault("time_windows", r.get("time_windows", []))
+    return r
+
+@app.post("/rules")
+async def set_rules(request: Request):
+    data = await request.json()
+    norm = lambda xs: [x.strip().lower() for x in (xs or []) if x and x.strip()]
+    data["blocked_services"]  = norm(data.get("blocked_services"))
+    data["allowed_domains"]   = norm(data.get("allowed_domains"))
+    data["scope_domains"]     = norm(data.get("scope_domains"))
+    data["warn_only_domains"] = norm(data.get("warn_only_domains"))
+    data["log_external"]      = bool(data.get("log_external", False))
+    # time windows
+    tws = []
+    for tw in data.get("time_windows", []) or []:
+        tws.append({"start": (tw.get("start","") or "").strip(), "end": (tw.get("end","") or "").strip()})
+    data["time_windows"] = tws
+    save_rules(data); return {"ok": True, "rules": get_rules()}
+
+@app.get("/rules/view")
+def rules_view():
+    r = get_rules()
+    def join(xs): return "\n".join(xs or [])
+    twtext = "\n".join([f"{tw.get('start','')}-{tw.get('end','')}" for tw in (r.get("time_windows") or [])])
+    page = f"""<!doctype html><meta charset='utf-8'><title>Biotact Р Р†Р вЂљРІР‚Сњ Rules</title>
+    <style>body{{font-family:system-ui;margin:18px;max-width:900px}} textarea{{width:100%;height:140px}} .row{{margin:14px 0}} .btn{{padding:8px 14px}}</style>
+    <h2>Biotact Р Р†Р вЂљРІР‚Сњ Р В РЎСљР В Р’В°Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РІвЂћвЂ“Р В РЎвЂќР В РЎвЂ Р В РЎвЂ”Р РЋР вЂљР В Р’В°Р В Р вЂ Р В РЎвЂР В Р’В» {_privacy_badge()}</h2>
+    <div class=row><a href="/logs/view">Р В РІР‚С”Р В РЎвЂўР В РЎвЂ“Р В РЎвЂ</a> Р вЂ™Р’В· <a href="/dashboard">Dashboard</a></div>
+    <form onsubmit="return save()">
+      <div class=row><b>Р В РІР‚вЂќР В Р’В°Р В Р’В±Р В Р’В»Р В РЎвЂўР В РЎвЂќР В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р РЋР С“Р В Р’ВµР РЋР вЂљР В Р вЂ Р В РЎвЂР РЋР С“Р РЋРІР‚в„– (Р В РЎвЂ”Р В РЎвЂў Р В РЎвЂўР В РўвЂР В Р вЂ¦Р В РЎвЂўР В РЎВР РЋРЎвЂњ Р В Р вЂ¦Р В Р’В° Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР В Р’Вµ):</b><br>
+        <textarea id=blocked>{join(r['blocked_services'])}</textarea></div>
+      <div class=row><b>Р В РЎвЂєР В Р’В±Р В Р’В»Р В Р’В°Р РЋР С“Р РЋРІР‚С™Р РЋР Р‰ (scope): Р РЋРІР‚С™Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В РЎвЂќР В РЎвЂў Р РЋР РЉР РЋРІР‚С™Р В РЎвЂ Р В РўвЂР В РЎвЂўР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚в„– Р В Р’В°Р В РЎвЂ“Р В Р’ВµР В Р вЂ¦Р РЋРІР‚С™ Р В РЎвЂќР В РЎвЂўР В Р вЂ¦Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В Р’В»Р В РЎвЂР РЋР вЂљР РЋРЎвЂњР В Р’ВµР РЋРІР‚С™:</b><br>
+        <textarea id=scope>{join(r['scope_domains'])}</textarea>
+        <label><input type=checkbox id=logext {"checked" if r["log_external"] else ""}> Р В РІР‚С”Р В РЎвЂўР В РЎвЂ“Р В РЎвЂР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂ Р В Р вЂ Р В Р вЂ¦Р В Р’Вµ scope</label>
+      </div>
+      <div class=row><b>Р В РІР‚СњР В РЎвЂўР В РЎВР В Р’ВµР В Р вЂ¦Р В Р’В°Р В РЎВ Р Р†Р вЂљРІР‚Сњ Р РЋРІР‚С™Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В РЎвЂќР В РЎвЂў Р В РЎвЂ”Р РЋР вЂљР В Р’ВµР В РўвЂР РЋРЎвЂњР В РЎвЂ”Р РЋР вЂљР В Р’ВµР В Р’В¶Р В РўвЂР В Р’В°Р РЋРІР‚С™Р РЋР Р‰ (Р В Р’В±Р В Р’ВµР В Р’В· Р В РўвЂР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р В РЎвЂР В РІвЂћвЂ“):</b><br>
+        <textarea id=warn>{join(r['warn_only_domains'])}</textarea>
+      </div>
+      <div class=row><b>Р В РЎС›Р В РЎвЂР РЋРІР‚В¦Р В РЎвЂР В Р’Вµ Р РЋРІР‚РЋР В Р’В°Р РЋР С“Р РЋРІР‚в„– (HH:MM-HH:MM, Р В РЎвЂ”Р В РЎвЂў Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РЎвЂќР В Р’Вµ):</b><br><textarea id=tw>{twtext}</textarea></div>
+      <div class=row><b>Р В Р’В Р В Р’В°Р В Р’В·Р РЋР вЂљР В Р’ВµР РЋРІвЂљВ¬Р РЋРІР‚ВР В Р вЂ¦Р В Р вЂ¦Р РЋРІР‚в„–Р В Р’Вµ Р В РўвЂР В РЎвЂўР В РЎВР В Р’ВµР В Р вЂ¦Р РЋРІР‚в„– Р В РўвЂР В Р’В»Р РЋР РЏ Р В Р’В¤Р В РЎвЂўР В РЎвЂќР РЋРЎвЂњР РЋР С“Р В Р’В°:</b><br><textarea id=allow>{join(r['allowed_domains'])}</textarea></div>
+      <button class=btn>Р В Р Р‹Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰</button> <span id=msg style=color:#090></span>
+    </form>
+    <script>
+    function parseTW(s){{return (s||"").split(/\\n+/).map(x=>x.trim()).filter(Boolean).map(x=>{{const [a,b]=x.split("-");return {{start:(a||"").trim(),end:(b||"").trim()}};}});}}
+    async function save(){{
+      const body = {{
+        blocked_services: (blocked.value||"").split(/\\n+/).map(x=>x.trim()).filter(Boolean),
+        scope_domains:    (scope.value||"").split(/\\n+/).map(x=>x.trim()).filter(Boolean),
+        allowed_domains:  (allow.value||"").split(/\\n+/).map(x=>x.trim()).filter(Boolean),
+        warn_only_domains:(warn.value||"").split(/\\n+/).map(x=>x.trim()).filter(Boolean),
+        time_windows:     parseTW(tw.value),
+        log_external:     logext.checked
+      }};
+      const r = await fetch("/rules",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify(body)}});
+      msg.textContent = (r.ok?"Р В Р Р‹Р В РЎвЂўР РЋРІР‚В¦Р РЋР вЂљР В Р’В°Р В Р вЂ¦Р В Р’ВµР В Р вЂ¦Р В РЎвЂў":"Р В РЎвЂєР РЋРІвЂљВ¬Р В РЎвЂР В Р’В±Р В РЎвЂќР В Р’В°"); return false;
+    }}
+    </script>"""
+    return html_utf8(page)
+
+# --- Focus ---
+def _focus_status():
+    if focus_state["active"] and _now() >= focus_state["end_ts"]:
+        focus_state["active"] = False
+    return {"active": focus_state["active"], "end_ts": focus_state["end_ts"], "allow": list(focus_state["allow"]),
+            "seconds_left": max(0, int(focus_state["end_ts"] - _now())) if focus_state["active"] else 0}
+
+@app.post("/focus/start")
+async def focus_start(request: Request):
+    payload = await request.json()
+    minutes = int(payload.get("minutes",25)); allow = payload.get("allow",[])
+    allow = list({*(allow or []), *(get_rules().get("allowed_domains") or [])})
+    focus_state.update({"active": True, "end_ts": _now()+minutes*60, "allow": allow})
+    return _focus_status()
+
+@app.post("/focus/stop")
+def focus_stop(): focus_state.update({"active": False, "end_ts": 0}); return _focus_status()
+
+@app.get("/focus/status")
+def focus_status(): return _focus_status()
+
+# --- PANIC ---
+@app.post("/panic/on")
+async def panic_on(request: Request):
+    global panic_until
+    payload = await request.json() if request.headers.get("content-type","").startswith("application/") else {}
+    minutes = int(payload.get("minutes", 1440))
+    panic_until = _now() + minutes*60
+    return {"ok": True, "panic": True, "until": panic_until}
+
+@app.post("/panic/off")
+def panic_off():
+    global panic_until
+    panic_until = 0.0
+    return {"ok": True, "panic": False}
+
+@app.get("/panic/status")
+def panic_status(): return {"panic": _is_panic(), "until": panic_until}
+
+# --- Policy helper (scope + panic + focus) ---
+def _apply_scope(host: str) -> Dict[str, Any]:
+    rules = get_rules()
+    scope = set(rules.get("scope_domains") or [])
+    out_of_scope = len(scope)>0 and (host not in scope)
+    return {"rules": rules, "out_of_scope": out_of_scope}
+
+@app.get("/policy/check")
+def policy_check(url: str, source: str="browser", device: str="pc"):
+    host = _domain(_norm_input_url(url))
+    if _is_panic():
+        return {"ok": True, "ignored": True, "panic": True}
+    sc = _apply_scope(host)
+    if sc["out_of_scope"]:
+        return {"ok": True, "decision": {"violation": False}, "ignored": True}
+    decision = check_event({"source": source, "target": "https://"+host, "device": device})
+    # focus
+    if focus_state["active"] and host not in (focus_state["allow"] or []):
+        decision["violation"] = True; decision.setdefault("reason", []).append("focus")
+    # warn-only (Р РЋРІР‚С™Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В РЎвЂќР В РЎвЂў Р В РЎвЂ”Р РЋР вЂљР В Р’ВµР В РўвЂР РЋРЎвЂњР В РЎвЂ”Р РЋР вЂљР В Р’ВµР В Р’В¶Р В РўвЂР В Р’В°Р В Р’ВµР В РЎВ)
+    if host in set(sc["rules"].get("warn_only_domains") or []):
+        decision["violation"] = True
+        decision.setdefault("reason", []).append("warn_only")
+        decision["warn_mode"] = True
+    return {"ok": True, "decision": decision}
+
+# --- Events (Р РЋРЎвЂњР РЋРІР‚РЋР РЋРІР‚ВР РЋРІР‚С™ panic/scope/warn-only) ---
+@app.post("/event")
+async def on_event(request: Request):
+    if _is_panic():  # Р В Р вЂ  Р В РЎвЂ”Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’Вµ Р В Р вЂ¦Р В РЎвЂР РЋРІР‚РЋР В Р’ВµР В РЎвЂ“Р В РЎвЂў Р В Р вЂ¦Р В Р’Вµ Р В Р’В»Р В РЎвЂўР В РЎвЂ“Р В РЎвЂР РЋР вЂљР РЋРЎвЂњР В Р’ВµР В РЎВ Р В РЎвЂ Р В Р вЂ¦Р В Р’Вµ Р В Р вЂ Р В РЎВР В Р’ВµР РЋРІвЂљВ¬Р В РЎвЂР В Р вЂ Р В Р’В°Р В Р’ВµР В РЎВР РЋР С“Р РЋР РЏ
+        return {"ok": True, "ignored": True, "panic": True}
+    raw = await request.json()
+    host = sanitize_url_keep_domain(raw.get("target",""))
+    raw["target"] = host
+    sc = _apply_scope(host)
+    # Р В Р вЂ Р В Р вЂ¦Р В Р’Вµ Р В РЎвЂўР В Р’В±Р В Р’В»Р В Р’В°Р РЋР С“Р РЋРІР‚С™Р В РЎвЂ Р Р†Р вЂљРІР‚Сњ Р В РЎвЂР В РЎвЂ“Р В Р вЂ¦Р В РЎвЂўР РЋР вЂљ (Р В РЎвЂР В Р’В»Р В РЎвЂ Р РЋРІР‚С™Р В РЎвЂўР В Р’В»Р РЋР Р‰Р В РЎвЂќР В РЎвЂў Р РЋР С“Р РЋРІР‚РЋР В РЎвЂР РЋРІР‚С™Р В Р’В°Р В Р’ВµР В РЎВ, Р В Р’ВµР РЋР С“Р В Р’В»Р В РЎвЂ Р В Р вЂ Р В РЎвЂќР В Р’В»Р РЋР вЂ№Р РЋРІР‚РЋР В Р’ВµР В Р вЂ¦Р В РЎвЂў)
+    if sc["out_of_scope"]:
+        if sc["rules"].get("log_external", False):
+            add_event({"source": raw.get("source","browser"), "target": host, "device": raw.get("device","pc"), "out_of_scope": True},
+                      {"violation": False, "reason": ["out_of_scope"]}, [])
+        return {"ok": True, "ignored": True, "scope": "out_of_scope"}
+
+    # policy
+    decision = check_event({"source": raw.get("source","browser"), "target": "https://"+host, "device": raw.get("device","pc")})
+    # focus
+    if focus_state["active"] and host not in (focus_state["allow"] or []):
+        decision["violation"] = True; decision.setdefault("reason", []).append("focus")
+
+    # warn-only: Р В Р вЂ¦Р В Р’Вµ Р В Р’В·Р В Р’В°Р В РЎвЂ”Р РЋРЎвЂњР РЋР С“Р В РЎвЂќР В Р’В°Р В Р’ВµР В РЎВ Р В РўвЂР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р В РЎвЂР РЋР РЏ
+    warn_only = host in set(sc["rules"].get("warn_only_domains") or [])
+    if warn_only:
+        decision["violation"] = True
+        decision.setdefault("reason", []).append("warn_only")
+        decision["warn_mode"] = True
+
+    actions: List[Dict[str,Any]] = []
+    if decision.get("violation") and not warn_only:
+        actions = [{"action":"run_biotact","pipeline":"pipelines/example.yml"}]
+    result = run_steps(actions) if actions else []
+    add_event(sanitize_event_for_log(raw), {"violation": decision.get("violation", False), "reason": decision.get("reason", []), "warn": bool(warn_only)}, result)
+    return {"ok": True, "decision": decision, "actions_run": result}
+
+# --- Logs/Dashboard + Р В РЎвЂќР В Р вЂ¦Р В РЎвЂўР В РЎвЂ”Р В РЎвЂќР В РЎвЂ ---
+@app.post("/logs/clear")
+def logs_clear():
+    try:
+        if os.path.exists(EVENTS_JL): os.remove(EVENTS_JL)
+        return {"ok": True}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+@app.get("/logs/export.csv")
+def export_csv(limit: int=2000):
+    rows = list_events(limit)
+    out = io.StringIO(); w = csv.writer(out)
+    w.writerow(["id","ts","source","target(domain)","device","decision","actions"])
+    for r in rows:
+        w.writerow([r.get("id"), r.get("ts"), r.get("source"), r.get("target"), r.get("device"), r.get("decision"), r.get("actions")])
+    return Response(out.getvalue(), media_type="text/csv; charset=utf-8", headers={"Content-Disposition":"attachment; filename=biotact_logs_priv.csv"})
+
+@app.get("/logs/view")
+def logs_view():
+    rows = list_events(300)
+    import html, json as _j
+    def esc(x):
+        if isinstance(x,(dict,list)): x = _j.dumps(x, ensure_ascii=False)
+        return html.escape(str(x))
+    badge = _privacy_badge()
+    banner = "<div style='padding:8px;border:1px solid #f33;background:#fee;border-radius:8px;margin-bottom:8px'>PANIC MODE Р В Р’В°Р В РЎвЂќР РЋРІР‚С™Р В РЎвЂР В Р вЂ Р В Р’ВµР В Р вЂ¦ Р Р†Р вЂљРІР‚Сњ Р РЋР С“Р В РЎвЂўР В Р’В±Р РЋРІР‚в„–Р РЋРІР‚С™Р В РЎвЂР РЋР РЏ Р В Р вЂ¦Р В Р’Вµ Р РЋР С“Р В РЎвЂўР В Р’В±Р В РЎвЂР РЋР вЂљР В Р’В°Р РЋР вЂ№Р РЋРІР‚С™Р РЋР С“Р РЋР РЏ</div>" if _is_panic() else ""
+    toolbar = """<div style='margin:8px 0; display:flex; gap:10px; align-items:center; flex-wrap:wrap'>
+      <a href='/logs/export.csv'>Р В Р Р‹Р В РЎвЂќР В Р’В°Р РЋРІР‚РЋР В Р’В°Р РЋРІР‚С™Р РЋР Р‰ CSV</a> Р вЂ™Р’В· <a href='/dashboard'>Dashboard</a> Р вЂ™Р’В· <a href='/rules/view'>Р В РЎСџР РЋР вЂљР В Р’В°Р В Р вЂ Р В РЎвЂР В Р’В»Р В Р’В°</a>
+      <button onclick="fetch('/logs/clear',{method:'POST'}).then(()=>location.reload())">Р В РЎвЂєР РЋРІР‚РЋР В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂР РЋРІР‚С™Р РЋР Р‰ Р В Р’В»Р В РЎвЂўР В РЎвЂ“Р В РЎвЂ</button>
+      <button onclick="fetch('/panic/on',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({minutes:1440})}).then(()=>location.reload())">Р В РЎСџР В Р’В°Р В Р вЂ¦Р В РЎвЂР В РЎвЂќР В Р’В° 24Р РЋРІР‚РЋ</button>
+      <button onclick="fetch('/panic/off',{method:'POST'}).then(()=>location.reload())">Р В Р Р‹Р В Р вЂ¦Р РЋР РЏР РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂ”Р В Р’В°Р В Р вЂ¦Р В РЎвЂР В РЎвЂќР РЋРЎвЂњ</button>
+    </div>"""
+    parts = [f"<html><head><meta charset='utf-8'><title>Biotact Logs</title>",
+             "<style>table{border-collapse:collapse} td,th{border:1px solid #ccc;padding:6px} .mono{font-family:monospace} button{padding:6px 10px}</style>",
+             f"</head><body><h3>Biotact Р Р†Р вЂљРІР‚Сњ Р В РЎСџР В РЎвЂўР РЋР С“Р В Р’В»Р В Р’ВµР В РўвЂР В Р вЂ¦Р В РЎвЂР В Р’Вµ Р РЋР С“Р В РЎвЂўР В Р’В±Р РЋРІР‚в„–Р РЋРІР‚С™Р В РЎвЂР РЋР РЏ {badge}</h3>", banner, toolbar,
+             "<table><tr><th>ID</th><th>Р В РІР‚в„ўР РЋР вЂљР В Р’ВµР В РЎВР РЋР РЏ</th><th>Р В Р’ВР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂР В РЎвЂќ</th><th>Р В Р’В¦Р В Р’ВµР В Р’В»Р РЋР Р‰ (Р В РўвЂР В РЎвЂўР В РЎВР В Р’ВµР В Р вЂ¦)</th><th>Р В Р в‚¬Р РЋР С“Р РЋРІР‚С™Р РЋР вЂљР В РЎвЂўР В РІвЂћвЂ“Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р В РЎвЂў</th><th>Р В Р’В Р В Р’ВµР РЋРІвЂљВ¬Р В Р’ВµР В Р вЂ¦Р В РЎвЂР В Р’Вµ</th><th>Р В РІР‚СњР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р В РЎвЂР РЋР РЏ</th></tr>"]
+    for r in rows:
+        ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(r.get("ts",_now())))
+        parts.append(f"<tr><td>{r.get('id','')}</td><td class='mono'>{ts}</td><td>{esc(r.get('source',''))}</td>"
+                     f"<td class='mono'>{esc(r.get('target',''))}</td><td>{esc(r.get('device',''))}</td>"
+                     f"<td class='mono'>{esc(r.get('decision',''))}</td><td class='mono'>{esc(r.get('actions',''))}</td></tr>")
+    parts.append("</table></body></html>"); return html_utf8("".join(parts))
+
+@app.get("/logs")
+def logs(limit: int=200): return {"items": list_events(limit)}
+
+@app.get("/logs/data")
+def logs_data(days: int=7): return stats(days)
+
+@app.get("/dashboard")
+def dashboard():
+    badge = _privacy_badge()
+    panic_html = ("<div style='padding:8px;border:1px solid #f33;background:#fee;border-radius:8px;margin-bottom:8px'>PANIC MODE Р В°Р С”РЎвЂљР С‘Р Р†Р ВµР Р… РІР‚вЂќ Р Т‘Р В°Р Р…Р Р…РЎвЂ№Р Вµ Р Р†РЎР‚Р ВµР СР ВµР Р…Р Р…Р С• Р Р…Р Вµ РЎРѓР С•Р В±Р С‘РЎР‚Р В°РЎР‹РЎвЂљРЎРѓРЎРЏ</div>" if _is_panic() else "")
+    page = ("<!doctype html><meta charset='utf-8'><title>Biotact РІР‚вЂќ Dashboard</title>"
+            "<script src='https://cdn.plot.ly/plotly-2.35.2.min.js'></script>"
+            "<style>body{font-family:system-ui;margin:16px}.row{display:grid;grid-template-columns:1fr 1fr;gap:16px}.box{border:1px solid #ddd;border-radius:12px;padding:12px}.kpis{display:flex;gap:16px;flex-wrap:wrap}.kpi{flex:1;border:1px solid #eee;border-radius:12px;padding:12px;text-align:center}.toolbar{margin:8px 0}button{padding:6px 10px}</style>"
+            "<h2>Biotact РІР‚вЂќ Dashboard " + badge + "</h2>" + panic_html +
+            "<div class='toolbar'><a href='/logs/export.csv'>CSV</a> Р’В· <a href='/rules/view'>Р СџРЎР‚Р В°Р Р†Р С‘Р В»Р В°</a> Р’В· <a href='/logs/view'>Р вЂєР С•Р С–Р С‘</a> "
+            "<button onclick=""fetch('/panic/on',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({minutes:1440})}).then(()=>location.reload())"">Р СџР В°Р Р…Р С‘Р С”Р В° 24РЎвЂЎ</button> "
+            "<button onclick=""fetch('/panic/off',{method:'POST'}).then(()=>location.reload())"">Р РЋР Р…РЎРЏРЎвЂљРЎРЉ Р С—Р В°Р Р…Р С‘Р С”РЎС“</button></div>"
+            "<div class='kpis' id='kpis'></div>"
+            "<div class='row'><div class='box'><div id='by_day' style='height:300px'></div></div><div class='box'><div id='by_hour' style='height:300px'></div></div></div>"
+            "<div class='row'><div class='box'><div id='top_domains' style='height:320px'></div></div><div class='box'><div id='reasons' style='height:320px'></div></div></div>"
+            "<script>async function load(days){const r=await fetch('/logs/data?days='+(days||7));const d=await r.json();const k=document.getElementById('kpis');k.innerHTML='';const add=(t,v)=>{const el=document.createElement('div');el.className='kpi';el.innerHTML=`<div style=\"" + "color:#666" + "\">${t}</div><div style=\"" + "font-size:28px;font-weight:700" + "\">${v}</div>`;k.appendChild(el);};add('Р РЋР С•Р В±РЎвЂ№РЎвЂљР С‘Р в„–',d.totals.events);add('Р ВРЎРѓРЎвЂљР С•РЎвЂЎР Р…Р С‘Р С”Р С•Р Р†',d.totals.sources);add('Р Р€РЎРѓРЎвЂљРЎР‚Р С•Р в„–РЎРѓРЎвЂљР Р†',d.totals.devices);add('Р вЂќР С•Р СР ВµР Р…Р С•Р Р†',d.totals.domains);Plotly.newPlot('by_day',[{x:d.by_day.map(i=>i.name),y:d.by_day.map(i=>i.value),type:'bar'}],{title:'Р РЋР С•Р В±РЎвЂ№РЎвЂљР С‘РЎРЏ Р С—Р С• Р Т‘Р Р…РЎРЏР С',margin:{t:40}});Plotly.newPlot('by_hour',[{x:d.by_hour.map(i=>i.name),y:d.by_hour.map(i=>i.value),type:'bar'}],{title:'Р РЋР С•Р В±РЎвЂ№РЎвЂљР С‘РЎРЏ Р С—Р С• РЎвЂЎР В°РЎРѓР В°Р С',margin:{t:40}});Plotly.newPlot('top_domains',[{labels:d.top_domains.map(i=>i.name),values:d.top_domains.map(i=>i.value),type:'pie',hole:.35}],{title:'Р СћР С•Р С— Р Т‘Р С•Р СР ВµР Р…РЎвЂ№',margin:{t:40}});Plotly.newPlot('reasons',[{x:d.reasons.map(i=>i.name),y:d.reasons.map(i=>i.value),type:'bar'}],{title:'Р СџРЎР‚Р С‘РЎвЂЎР С‘Р Р…РЎвЂ№ (policy)',margin:{t:40}});}load(7);</script>")
+    return html_utf8(page)
+
+# --- UTF-8 helpers & middleware (auto-injected) ---
+def html_utf8(body: str) -> HTMLResponse:
+    # РіР°СЂР°РЅС‚РёСЂСѓРµРј РјРµС‚Сѓ РІ HTML
+    if "<meta charset" not in body.lower():
+        body = "<!doctype html><meta charset='utf-8'>" + body
+    # РіР°СЂР°РЅС‚РёСЂСѓРµРј Р·Р°РіРѕР»РѕРІРѕРє СЃ charset
+    return html_utf8(content=body, media_type="text/html; charset=utf-8")
+
+@app.middleware("http")
+async def __biotact_force_utf8(request, call_next):
+    response = await call_next(request)
+    ct = response.headers.get("content-type", "")
+    if ct.startswith("text/html") and "charset=" not in ct.lower():
+        response.headers["content-type"] = "text/html; charset=utf-8"
+    return response
+# --- end UTF-8 helpers ---
